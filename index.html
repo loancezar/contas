@@ -102,6 +102,16 @@ label.field-label { font-size:11px; color:var(--muted); margin-bottom:4px; displ
 
 .small-btn { padding:5px 12px; border-radius:6px; font-size:11px; font-family:var(--fn); font-weight:600; cursor:pointer; }
 
+/* Edit Modal */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.7); display:flex; align-items:center; justify-content:center; z-index:9998; }
+.modal-box { background:#1a1a2e; border:1px solid var(--border); border-radius:16px; padding:28px; width:100%; max-width:400px; }
+.modal-box h3 { margin:0 0 20px; font-size:18px; color:var(--fg); }
+.modal-actions { display:flex; gap:8px; margin-top:16px; }
+.modal-actions button { flex:1; padding:10px 0; border-radius:10px; border:none; font-family:var(--fn); font-size:13px; font-weight:600; cursor:pointer; }
+
+.tx-edit { background:none; border:none; color:var(--muted); cursor:pointer; font-size:13px; padding:4px 6px; opacity:.5; transition:opacity .15s; }
+.tx-edit:hover { opacity:1; }
+
 /* Login Screen */
 .login-overlay { position:fixed; inset:0; background:var(--bg); display:flex; align-items:center; justify-content:center; z-index:9999; }
 .login-box { width:100%; max-width:380px; padding:40px 32px; text-align:center; }
@@ -126,12 +136,11 @@ label.field-label { font-size:11px; color:var(--muted); margin-bottom:4px; displ
   <div class="login-box">
     <div class="login-logo">◆</div>
     <div class="login-title">Finanças Pessoais</div>
-    <div class="login-sub" id="loginSub">Crie uma senha para proteger seus dados</div>
+    <div class="login-sub">Digite a senha para acessar</div>
     <div class="login-error" id="loginError"></div>
-    <input type="password" class="login-input" id="loginPass" placeholder="Digite sua senha" autofocus>
-    <input type="password" class="login-input" id="loginConfirm" placeholder="Confirme a senha">
-    <button class="login-btn" id="loginBtn">Criar Senha e Entrar</button>
-    <div class="login-hint" id="loginHint">Seus dados ficam salvos localmente no navegador.<br>A senha protege o acesso ao app.</div>
+    <input type="password" class="login-input" id="loginPass" placeholder="Senha" autofocus>
+    <button class="login-btn" id="loginBtn">Entrar</button>
+    <div class="login-hint">Acesso restrito · Dados protegidos</div>
   </div>
 </div>
 
@@ -217,16 +226,71 @@ function render(){
 
 function sC(l,v,a,sub){return`<div class="stat-card" style="border-left:4px solid ${a}"><div class="stat-label">${l}</div><div class="stat-value" style="color:${a}">${v}</div>${sub?`<div class="stat-sub">${sub}</div>`:""}</div>`}
 
-function txListH(txs,filter){
-  const f=txs.filter(t=>filter==="todos"||t.type===filter).sort((a,b)=>b.date.localeCompare(a.date));
+function txListH(txs,filter,editable){
+  const f=txs.filter(t=>filter==="todos"||t.type===filter).sort((a,b)=>b.date===a.date?(b.createdAt||0)-(a.createdAt||0):b.date.localeCompare(a.date));
   if(!f.length)return`<div style="text-align:center;padding:40px;color:var(--muted)">Nenhuma transação encontrada</div>`;
-  return`<div class="tx-list">${f.map(t=>{const ct=gCat(t.type,t.category);return`<div class="tx-item"><div class="tx-icon" style="background:${t.type==="receita"?"rgba(42,157,143,.15)":"rgba(224,122,95,.15)"}">${ct.icon}</div><div class="tx-info"><div class="tx-desc">${t.description}</div><div class="tx-meta">${ct.label} · ${new Date(t.date+"T12:00").toLocaleDateString("pt-BR")}</div></div><div class="tx-amount" style="color:${t.type==="receita"?"#2A9D8F":"#E07A5F"}">${t.type==="receita"?"+":"−"}${fBRL(t.amount)}</div><button class="tx-del" data-id="${t.id}">✕</button></div>`}).join("")}</div>`;
+  return`<div class="tx-list">${f.map(t=>{const ct=gCat(t.type,t.category);return`<div class="tx-item"><div class="tx-icon" style="background:${t.type==="receita"?"rgba(42,157,143,.15)":"rgba(224,122,95,.15)"}">${ct.icon}</div><div class="tx-info"><div class="tx-desc">${t.description}</div><div class="tx-meta">${ct.label} · ${new Date(t.date+"T12:00").toLocaleDateString("pt-BR")}</div></div><div class="tx-amount" style="color:${t.type==="receita"?"#2A9D8F":"#E07A5F"}">${t.type==="receita"?"+":"−"}${fBRL(t.amount)}</div>${editable?`<button class="tx-edit" data-id="${t.id}" title="Editar">✎</button>`:""}<button class="tx-del" data-id="${t.id}">✕</button></div>`}).join("")}</div>`;
 }
 
-function footH(){return`<div class="footer"><div class="footer-info">${data.transactions.length} transações · ${(data.fixedExpenses||[]).length} fixas · ${data.goals.length} metas</div><button class="btn-reset" id="resetBtn">Resetar dados</button></div>`}
+function openEditModal(txId){
+  const t=data.transactions.find(x=>x.id===txId);
+  if(!t)return;
+  const ct=gCat(t.type,t.category);
+  const overlay=document.createElement("div");
+  overlay.className="modal-overlay";
+  overlay.innerHTML=`<div class="modal-box">
+    <h3>Editar Transação</h3>
+    <div style="margin-bottom:12px"><label class="field-label">Descrição</label><input class="inp" id="edDesc" value="${t.description}"></div>
+    <div class="grid-cols">
+      <div><label class="field-label">Valor (R$)</label><input class="inp" id="edAmt" type="text" inputmode="decimal" value="${t.amount.toString().replace(".",",")}"></div>
+      <div><label class="field-label">Data</label><input class="inp" id="edDate" type="date" value="${t.date}"></div>
+    </div>
+    <div style="margin-bottom:12px"><label class="field-label">Categoria</label>
+      <div class="cat-pills" id="edCats">${CATEGORIES[t.type].map(c=>`<button class="cat-pill${c.id===t.category?" active":""}" data-cat="${c.id}">${c.icon} ${c.label}</button>`).join("")}</div>
+    </div>
+    <input type="hidden" id="edCat" value="${t.category}">
+    <div class="modal-actions">
+      <button id="edCancel" style="background:var(--input-bg);color:var(--muted)">Cancelar</button>
+      <button id="edSave" style="background:linear-gradient(135deg,#E8C468,#D4A373);color:#1a1a2e">Salvar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+
+  overlay.querySelector("#edCancel").onclick=()=>overlay.remove();
+  overlay.addEventListener("click",e=>{if(e.target===overlay)overlay.remove()});
+
+  overlay.querySelectorAll("#edCats .cat-pill").forEach(b=>{b.onclick=()=>{
+    overlay.querySelector("#edCat").value=b.dataset.cat;
+    overlay.querySelectorAll("#edCats .cat-pill").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active");
+  }});
+
+  overlay.querySelector("#edSave").onclick=()=>{
+    const amt=parseFloat((overlay.querySelector("#edAmt").value||"").replace(",","."));
+    if(!amt||amt<=0)return;
+    t.description=overlay.querySelector("#edDesc").value||t.description;
+    t.amount=amt;
+    t.date=overlay.querySelector("#edDate").value||t.date;
+    t.category=overlay.querySelector("#edCat").value||t.category;
+    save();overlay.remove();render();
+  };
+}
+
+function bindEdit(){document.querySelectorAll(".tx-edit").forEach(b=>{b.onclick=()=>openEditModal(b.dataset.id)})}
+
+function footH(){return`<div class="footer"><div class="footer-info">${data.transactions.length} transações · ${(data.fixedExpenses||[]).length} fixas · ${data.goals.length} metas</div><div id="resetArea"><button class="btn-reset" id="resetBtn">Resetar dados</button></div></div>`}
 
 function bindDel(){document.querySelectorAll(".tx-del").forEach(b=>{b.onclick=()=>{data.transactions=data.transactions.filter(t=>t.id!==b.dataset.id);save();render()}})}
-function bindReset(){const r=document.getElementById("resetBtn");if(r)r.onclick=()=>{if(confirm("Tem certeza que deseja apagar TODOS os dados?")){data={transactions:[],goals:[],fixedExpenses:[]};save();render()}}}
+function bindReset(){
+  const btn=document.getElementById("resetBtn");
+  if(!btn)return;
+  btn.onclick=()=>{
+    const area=document.getElementById("resetArea");
+    area.innerHTML=`<span style="font-size:12px;color:#E07A5F;margin-right:8px">Apagar tudo?</span><button class="small-btn" id="resetYes" style="background:#E07A5F;color:#fff;border:none;margin-right:4px">Sim, apagar</button><button class="small-btn" id="resetNo" style="background:var(--input-bg);color:var(--muted);border:1px solid var(--border)">Cancelar</button>`;
+    document.getElementById("resetYes").onclick=()=>{data={transactions:[],goals:[],fixedExpenses:[]};save();render()};
+    document.getElementById("resetNo").onclick=()=>render();
+  };
+}
 
 // ── PAINEL ──
 function renderPainel(c,mt,rec,desp,saldo,fix,fxA){
@@ -241,7 +305,7 @@ function renderPainel(c,mt,rec,desp,saldo,fix,fxA){
         <button class="btn-primary" id="txSub">Adicionar</button>
         <input type="hidden" id="txType" value="despesa"><input type="hidden" id="txCat" value="${CATEGORIES.despesa[0].id}">
       </div>
-      <div class="card"><h3>Últimas Transações</h3>${txListH(mt.slice(0,8),"todos")}</div>
+      <div class="card"><h3>Últimas Transações</h3>${txListH(mt,"todos",false)}</div>
     </div>${footH()}`;
   bindTxForm();bindDel();bindReset();
 }
@@ -258,7 +322,7 @@ function bindTxForm(){
     const amt=parseFloat((document.getElementById("txAmt").value||"").replace(",","."));
     if(!amt||amt<=0)return;
     const type=document.getElementById("txType").value,cat=document.getElementById("txCat").value,desc=document.getElementById("txDesc").value,date=document.getElementById("txDate").value;
-    data.transactions.push({id:genId(),type,category:cat,amount:amt,description:desc||gCat(type,cat).label,date});save();render();
+    data.transactions.push({id:genId(),type,category:cat,amount:amt,description:desc||gCat(type,cat).label,date,createdAt:Date.now()});save();render();
   };
 }
 
@@ -273,9 +337,9 @@ function renderTransacoes(c,mt){
   c.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:20px">
     <div class="filter-btns"><button class="filter-btn${txFilter==="todos"?" active":""}" data-f="todos">Todos</button><button class="filter-btn${txFilter==="receita"?" active":""}" data-f="receita">Receitas</button><button class="filter-btn${txFilter==="despesa"?" active":""}" data-f="despesa">Despesas</button></div>
     <div style="font-size:13px;color:var(--muted)">${mt.filter(t=>txFilter==="todos"||t.type===txFilter).length} transações em ${fMonth(selectedMonth)}</div>
-  </div>${txListH(mt,txFilter)}${footH()}`;
+  </div>${txListH(mt,txFilter,true)}${footH()}`;
   document.querySelectorAll(".filter-btn").forEach(b=>{b.onclick=()=>{txFilter=b.dataset.f;render()}});
-  bindDel();bindReset();
+  bindDel();bindEdit();bindReset();
 }
 
 // ── FIXAS ──
@@ -362,109 +426,48 @@ function gCardH(g){
   return`<div class="goal-card"><div class="goal-bar" style="width:${p}%;background:${bc}"></div><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-weight:600;font-size:15px">${g.name}</div><div style="font-size:13px;color:var(--muted);margin-top:4px">${fBRL(g.saved)} de ${fBRL(g.target)} — <span style="color:${p>=100?"#2A9D8F":"#E8C468"};font-weight:600">${p.toFixed(0)}%</span></div></div><button class="g-del" data-id="${g.id}" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:4px">✕</button></div><div style="display:flex;gap:6px;margin-top:12px"><input class="inp g-inp" data-id="${g.id}" placeholder="Valor" style="flex:1;padding:6px 10px;font-size:13px"><button class="small-btn g-dep" data-id="${g.id}" style="background:#2A9D8F;color:#fff;border:none">Depositar</button></div></div>`;
 }
 
-// ── Auth ──
-const AUTH_KEY = "financas-auth-hash";
+// ── Auth (senha fixa) ──
+const FIXED_PASS = "2907";
 const SESSION_KEY = "financas-session";
 
-async function sha256(text) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(text);
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
-}
-
-function hasPassword() { return !!localStorage.getItem(AUTH_KEY); }
 function isSessionActive() { return sessionStorage.getItem(SESSION_KEY) === "1"; }
 function startSession() { sessionStorage.setItem(SESSION_KEY, "1"); }
 function endSession() { sessionStorage.removeItem(SESSION_KEY); }
 
-function setupLoginScreen() {
+function setupLogin() {
   const overlay = document.getElementById("loginOverlay");
   const appWrap = document.getElementById("appWrap");
   const passInput = document.getElementById("loginPass");
-  const confirmInput = document.getElementById("loginConfirm");
   const loginBtn = document.getElementById("loginBtn");
   const loginError = document.getElementById("loginError");
-  const loginSub = document.getElementById("loginSub");
-  const loginHint = document.getElementById("loginHint");
 
-  // Already logged in this session
-  if (isSessionActive() && hasPassword()) {
+  if (isSessionActive()) {
     overlay.style.display = "none";
     appWrap.classList.add("visible");
     load(); render();
     return;
   }
 
-  if (hasPassword()) {
-    // Returning user - login mode
-    loginSub.textContent = "Digite sua senha para acessar";
-    confirmInput.style.display = "none";
-    loginBtn.textContent = "Entrar";
-    loginHint.innerHTML = 'Seus dados estão protegidos por senha.<br><a href="#" id="resetPassLink" style="color:#E8C468;text-decoration:none">Esqueci minha senha</a>';
-
-    loginBtn.onclick = async () => {
-      const pass = passInput.value;
-      if (!pass) { loginError.textContent = "Digite sua senha"; return; }
-      const hash = await sha256(pass);
-      if (hash === localStorage.getItem(AUTH_KEY)) {
-        loginError.textContent = "";
-        startSession();
-        overlay.style.display = "none";
-        appWrap.classList.add("visible");
-        load(); render();
-      } else {
-        loginError.textContent = "Senha incorreta";
-        passInput.value = "";
-        passInput.focus();
-      }
-    };
-
-    passInput.onkeydown = (e) => { if (e.key === "Enter") loginBtn.click(); };
-
-    setTimeout(() => {
-      const resetLink = document.getElementById("resetPassLink");
-      if (resetLink) {
-        resetLink.onclick = (e) => {
-          e.preventDefault();
-          if (confirm("⚠️ Ao resetar a senha, TODOS os seus dados financeiros serão apagados permanentemente. Deseja continuar?")) {
-            localStorage.removeItem(AUTH_KEY);
-            localStorage.removeItem(STORAGE_KEY);
-            location.reload();
-          }
-        };
-      }
-    }, 100);
-
-  } else {
-    // New user - register mode
-    loginBtn.onclick = async () => {
-      const pass = passInput.value;
-      const conf = confirmInput.value;
-      if (!pass) { loginError.textContent = "Digite uma senha"; return; }
-      if (pass.length < 4) { loginError.textContent = "A senha deve ter pelo menos 4 caracteres"; return; }
-      if (pass !== conf) { loginError.textContent = "As senhas não coincidem"; return; }
-      const hash = await sha256(pass);
-      localStorage.setItem(AUTH_KEY, hash);
-      startSession();
+  loginBtn.onclick = () => {
+    if (passInput.value === FIXED_PASS) {
       loginError.textContent = "";
+      startSession();
       overlay.style.display = "none";
       appWrap.classList.add("visible");
       load(); render();
-    };
+    } else {
+      loginError.textContent = "Senha incorreta";
+      passInput.value = "";
+      passInput.focus();
+    }
+  };
 
-    passInput.onkeydown = (e) => { if (e.key === "Enter") confirmInput.focus(); };
-    confirmInput.onkeydown = (e) => { if (e.key === "Enter") loginBtn.click(); };
-  }
+  passInput.onkeydown = (e) => { if (e.key === "Enter") loginBtn.click(); };
 }
 
-// Logout button
-document.getElementById("logoutBtn").onclick = () => {
-  endSession();
-  location.reload();
-};
+document.getElementById("logoutBtn").onclick = () => { endSession(); location.reload(); };
 
-setupLoginScreen();
+setupLogin();
 </script>
 </body>
 </html>
